@@ -53,7 +53,7 @@ pip install beautifulsoup4 rich
 
 ## Clona el Repositorio
 ```bash
-git clone https://github.com/tu_usuario/tu_repositorio.git
+git clone https://github.com/guayamose/NBA-ESPN-analisys.git
 ```
 
 ## Instala las Dependencias
