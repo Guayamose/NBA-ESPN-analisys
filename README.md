@@ -2,8 +2,8 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Status-EN%20DESARROLLO-yellow" alt="Status" />
-  <img src="https://img.shields.io/badge/Python-3.x-blue" alt="Python Version" />
-  <img src="https://img.shields.io/badge/BeautifulSoup-4.x-blue" alt="BeautifulSoup Version" />
+  <img src="https://img.shields.io/badge/Python-3.13.1-blue" alt="Python Version" />
+  <img src="https://img.shields.io/badge/BeautifulSoup-4.13.3-blue" alt="BeautifulSoup Version" />
   <img src="https://img.shields.io/badge/Rich-Latest-blue" alt="Rich Version" />
   <img src="https://img.shields.io/badge/Licencia-Uso%20Comercial%20con%20Permiso-red" alt="Licencia Propietaria" />
 </p>
