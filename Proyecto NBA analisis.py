@@ -1,3 +1,7 @@
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+import re
 from bs4 import BeautifulSoup
 
 # -------------------------
@@ -15,11 +19,9 @@ html_oponentes = """
 """
 
 # -------------------------
-# 3. PROCESAR EL HTML DE ESTADÍSTICAS PROPIAS
+# PROCESAMIENTO DEL HTML DE ESTADÍSTICAS PROPIAS
 # -------------------------
 soup_propias = BeautifulSoup(html_propias, "html.parser")
-
-# Extraer la lista de equipos (asumimos que la tabla fija contiene los equipos)
 left_table_propias = soup_propias.find("table", class_="Table Table--align-right Table--fixed Table--fixed-left")
 teams = []
 if left_table_propias:
@@ -31,7 +33,6 @@ if left_table_propias:
                 team_name = tds[1].get_text(strip=True)
                 teams.append(team_name)
 
-# Extraer encabezados y filas de estadísticas (tabla scroller)
 data_propias = {}
 right_table_div_propias = soup_propias.find("div", class_="Table__Scroller")
 headers_propias = []
@@ -56,11 +57,9 @@ for idx, team in enumerate(teams):
         data_propias[team] = stats_dict
 
 # -------------------------
-# 4. PROCESAR EL HTML DE ESTADÍSTICAS DE OPONENTES
+# PROCESAMIENTO DEL HTML DE ESTADÍSTICAS DE OPONENTES
 # -------------------------
 soup_oponentes = BeautifulSoup(html_oponentes, "html.parser")
-
-# Extraer la lista de equipos (se espera que sea la misma o similar)
 left_table_oponentes = soup_oponentes.find("table", class_="Table Table--align-right Table--fixed Table--fixed-left")
 teams_oponentes = []
 if left_table_oponentes:
@@ -72,7 +71,6 @@ if left_table_oponentes:
                 team_name = tds[1].get_text(strip=True)
                 teams_oponentes.append(team_name)
                 
-# Procesar la tabla de estadísticas de oponentes
 data_oponentes = {}
 right_table_div_oponentes = soup_oponentes.find("div", class_="Table__Scroller")
 headers_oponentes = []
@@ -96,102 +94,161 @@ for idx, team in enumerate(teams_oponentes):
         stats_dict = dict(zip(headers_oponentes, stats_rows_oponentes[idx]))
         data_oponentes[team] = stats_dict
 
-# -------------------------
-# 5. FUNCIONES AUXILIARES
-# -------------------------
+# =========================
+# FUNCIONES AUXILIARES
+# =========================
 def to_float(value):
-    """
-    Convierte una cadena a float eliminando espacios, signos '+' y '%' y comas.
-    Si no se puede convertir, retorna None.
-    """
+    """Convierte una cadena a float eliminando espacios, signos, comas y porcentajes."""
     try:
-        value = value.strip().replace("+", "").replace("%", "").replace(",", "")
-        return float(value)
+        cleaned = re.sub(r'[^\d\.\-]', '', value)
+        return float(cleaned)
     except:
         return None
 
-# -------------------------
-# 6. INTERACCIÓN CON EL USUARIO PARA SELECCIONAR EQUIPOS
-# -------------------------
-print("Equipos disponibles:")
-for team in teams:
-    print(" -", team)
-
-def solicitar_equipo(prompt):
+def solicitar_equipo(prompt, available_teams):
     equipo = input(prompt).strip()
-    while equipo not in teams:
-        print("Equipo no encontrado. Intenta de nuevo. Equipos disponibles:")
-        for t in teams:
+    while not any(e.lower() == equipo.lower() for e in available_teams):
+        print("Equipo no encontrado. Equipos disponibles:")
+        for t in available_teams:
             print(" -", t)
         equipo = input(prompt).strip()
-    return equipo
+    for e in available_teams:
+        if e.lower() == equipo.lower():
+            return e
 
-# Se solicitan dos equipos
-equipo1 = solicitar_equipo("Ingrese el primer equipo: ")
-equipo2 = solicitar_equipo("Ingrese el segundo equipo: ")
+# Definición de nombres completos para las estadísticas
+full_stat_names = {
+    "J": "Juegos",
+    "PTS": "Puntos por juego",
+    "FGM": "Tiros de campo anotados",
+    "FGA": "Tiros de campo intentados",
+    "FG%": "Porcentaje de tiros de campo",
+    "3PM": "Tiros de 3 anotados",
+    "3PA": "Tiros de 3 intentados",
+    "3P%": "Porcentaje de tiros de 3",
+    "FTM": "Tiros libres anotados",
+    "FTA": "Tiros libres intentados",
+    "FT%": "Porcentaje de tiros libres",
+    "OR": "Rebotes ofensivos",
+    "DR": "Rebotes defensivos",
+    "REB": "Rebotes totales",
+    "AST": "Asistencias",
+    "STL": "Robos",
+    "BLK": "Bloqueos",
+    "TO": "Pérdidas",
+    "PF": "Faltas"
+}
 
-# -------------------------
-# 7. COMPARACIÓN DE ESTADÍSTICAS
-# -------------------------
-# Se asume que en data_propias se tienen las estadísticas propias de cada equipo
-# y en data_oponentes se tienen las estadísticas de oponentes de cada equipo
+# Agrupación de estadísticas en áreas de juego
+groups = {
+    "Disparo": ["PTS", "FGM", "FGA", "FG%"],
+    "Tiros de 3": ["3PM", "3PA", "3P%"],
+    "Tiros libres": ["FTM", "FTA", "FT%"],
+    "Rebotes": ["OR", "DR", "REB"],
+    "Juego de pases": ["AST"],
+    "Defensa": ["STL", "BLK", "TO", "PF"]
+}
 
-# Obtener estadísticas:
+# Inicializar la consola Rich
+console = Console()
+
+# =========================
+# NUEVAS FUNCIONES DE COMPARACIÓN CON RICH
+# =========================
+
+def compare_stat_individuals(stats_propias, stats_oponentes, equipo_propias, equipo_oponentes):
+    table = Table(title=f"Comparación Individual: {equipo_propias} vs {equipo_oponentes}", show_lines=True)
+    table.add_column("Estadística", style="bold", justify="center")
+    table.add_column(f"{equipo_propias}", justify="right")
+    table.add_column(f"{equipo_oponentes} Permite", justify="right")
+    table.add_column("Diff Absoluta", justify="right")
+    table.add_column("Diff Relativa (%)", justify="right")
+    
+    best_stat = None
+    best_diff_abs = -1
+    for stat in stats_propias:
+        val_prop = to_float(stats_propias[stat])
+        val_opp = to_float(stats_oponentes.get(stat, ""))
+        if val_prop is None or val_opp is None:
+            continue
+        diff_abs = abs(val_opp - val_prop)
+        diff_rel = ((val_opp - val_prop) / val_prop * 100) if val_prop != 0 else 0
+
+        if (val_opp - val_prop) > 0:
+            diff_color = "green"
+        elif (val_opp - val_prop) < 0:
+            diff_color = "red"
+        else:
+            diff_color = "white"
+
+        stat_full = full_stat_names.get(stat, stat)
+        table.add_row(stat_full,
+                      f"{val_prop:.2f}",
+                      f"{val_opp:.2f}",
+                      f"[{diff_color}]{diff_abs:.2f}[/{diff_color}]",
+                      f"[{diff_color}]{diff_rel:+.1f}%[/{diff_color}]")
+        if diff_abs > best_diff_abs:
+            best_diff_abs = diff_abs
+            best_stat = stat_full
+
+    console.print(table)
+    if best_stat:
+        console.print(Panel(f"La estadística con mayor diferencia absoluta es: [bold]{best_stat}[/bold] (Diff = {best_diff_abs:.2f})", style="cyan"))
+    else:
+        console.print("No se pudieron comparar las estadísticas numéricas.", style="red")
+
+def compare_by_groups(stats_propias, stats_oponentes, equipo_propias, equipo_oponentes):
+    table = Table(title=f"Comparación por Áreas de Juego: {equipo_propias} vs {equipo_oponentes}", show_lines=True)
+    table.add_column("Área de Juego", style="bold")
+    table.add_column("Diff Relativa Promedio (%)", justify="right")
+    table.add_column("Narrativa", justify="left")
+
+    for group_name, stat_list in groups.items():
+        diffs = []
+        for stat in stat_list:
+            val_prop = to_float(stats_propias.get(stat, ""))
+            val_opp = to_float(stats_oponentes.get(stat, ""))
+            if val_prop is None or val_opp is None or val_prop == 0:
+                continue
+            diff_rel = ((val_opp - val_prop) / val_prop) * 100
+            diffs.append(diff_rel)
+        if diffs:
+            avg_diff = sum(diffs) / len(diffs)
+            if avg_diff > 10:
+                narrative = f"El rival permite significativamente más en {group_name}."
+            elif avg_diff < -10:
+                narrative = f"El rival concede menos en {group_name}, defensa cerrada."
+            else:
+                narrative = f"El enfrentamiento en {group_name} es moderado."
+            table.add_row(group_name, f"{avg_diff:+.1f}%", narrative)
+        else:
+            table.add_row(group_name, "N/D", "Datos insuficientes")
+    console.print(table)
+
+# =========================
+# INTERACCIÓN CON EL USUARIO Y EJECUCIÓN DEL ANÁLISIS
+# =========================
+
+console.print("\n[bold underline magenta]Equipos Disponibles[/bold underline magenta]")
+for team in teams:
+    console.print(f" - {team}")
+
+equipo1 = solicitar_equipo("Ingrese el primer equipo: ", teams)
+equipo2 = solicitar_equipo("Ingrese el segundo equipo: ", teams)
+
+# Usamos la lógica: estadísticas propias de un equipo vs estadísticas de oponentes del rival
 stats_propias_equipo1 = data_propias.get(equipo1, {})
 stats_oponentes_equipo2 = data_oponentes.get(equipo2, {})
 
 stats_propias_equipo2 = data_propias.get(equipo2, {})
 stats_oponentes_equipo1 = data_oponentes.get(equipo1, {})
 
-def comparar_stats(stats_propias, stats_oponentes, equipo_propias, equipo_oponentes):
-    # Diccionario que mapea acrónimos a nombres completos
-    full_stat_names = {
-        "J": "Juegos",
-        "PTS": "Puntos por juego",
-        "FGM": "Tiros de campo anotados",
-        "FGA": "Tiros de campo intentados",
-        "FG%": "Porcentaje de tiros de campo",
-        "3PM": "Tiros de 3 anotados",
-        "3PA": "Tiros de 3 intentados",
-        "3P%": "Porcentaje de tiros de 3",
-        "FTM": "Tiros libres anotados",
-        "FTA": "Tiros libres intentados",
-        "FT%": "Porcentaje de tiros libres",
-        "OR": "Rebotes ofensivos",
-        "DR": "Rebotes defensivos",
-        "REB": "Rebotes totales",
-        "AST": "Asistencias",
-        "STL": "Robos",
-        "BLK": "Bloqueos",
-        "TO": "Pérdidas",
-        "PF": "Faltas"
-    }
-    
-    print(f"\nComparación: Estadísticas propias de {equipo_propias} vs estadísticas de oponentes de {equipo_oponentes}\n")
-    for stat in stats_propias:
-        val_propias = to_float(stats_propias[stat])
-        val_oponentes = to_float(stats_oponentes.get(stat, ""))
-        if val_propias is None or val_oponentes is None:
-            continue
-        diff = val_oponentes - val_propias
-        
-        # Usar el nombre completo de la estadística
-        stat_full = full_stat_names.get(stat, stat)
-        
-        # Elegir color: verde para diferencia positiva, rojo para negativa y sin color si es 0.
-        if diff > 0:
-            color = "\033[92m"  # verde
-        elif diff < 0:
-            color = "\033[91m"  # rojo
-        else:
-            color = "\033[0m"   # sin color especial
-        
-        reset = "\033[0m"
-        
-        # Imprimir en el formato solicitado:
-        # Ejemplo: "Puntos por juego: Miami Heat = 110.3 vs Golden State Warriors = 111.0 --> Diferencia: -0.70"
-        print(f"{stat_full} de {equipo_propias} = {val_propias} mientras que {equipo_oponentes} permite: {val_oponentes} --> Diferencia: {color}{diff:.2f}{reset}")
+console.print("\n[bold underline magenta]Análisis Individual[/bold underline magenta]\n")
+compare_stat_individuals(stats_propias_equipo1, stats_oponentes_equipo2, equipo1, equipo2)
+compare_stat_individuals(stats_propias_equipo2, stats_oponentes_equipo1, equipo2, equipo1)
 
-# Comparar:
-comparar_stats(stats_propias_equipo1, stats_oponentes_equipo2, equipo1, equipo2)
-comparar_stats(stats_propias_equipo2, stats_oponentes_equipo1, equipo2, equipo1)
+console.print("\n[bold underline magenta]Análisis por Áreas de Juego[/bold underline magenta]\n")
+console.print(f"\n[cyan]Para {equipo1} (propias) vs {equipo2} (oponentes):[/cyan]")
+compare_by_groups(stats_propias_equipo1, stats_oponentes_equipo2, equipo1, equipo2)
+console.print(f"\n[cyan]Para {equipo2} (propias) vs {equipo1} (oponentes):[/cyan]")
+compare_by_groups(stats_propias_equipo2, stats_oponentes_equipo1, equipo2, equipo1)
